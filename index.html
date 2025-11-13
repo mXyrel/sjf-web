@@ -6,7 +6,7 @@
 </head>
 <body>
 
-<h2>SJF Non-Preemptive Scheduling — WASM demo</h2>
+<h2>SJF Non-Preemptive Scheduling </h2>
 
 <div id="process-container"></div>
 
@@ -145,12 +145,20 @@
     outputEl.textContent = 'Running... (this may take a moment)\n';
     try {
       const result = await runCppSJF(inputText);
-      outputEl.textContent = result;
+
+      // <-- CHANGED: format averages to 2 decimals -->
+      const formatted = result.replace(
+        /Average (TAT|WT|RT):\s+([0-9.]+)/g,
+        (match, p1, p2) => `Average ${p1}: ${parseFloat(p2).toFixed(2)}`
+      );
+      outputEl.textContent = formatted;
+
     } catch (err) {
       outputEl.textContent = 'Error running WASM: ' + err;
       console.error(err);
     }
-  });
+});
+
 </script>
 
 </body>
