@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Interactive Round-Robin Scheduler (Landscape)</title>
+  <style>
+    /* Windows-like aesthetic + landscape layout */
+    :root{ --bg:#f3f6fb; --panel:#ffffff; --accent:#0b6cff; --muted:#6b7280; --border:#d1d5db }
+    html,body{height:100%;margin:0;font-family:Segoe UI, Roboto, Arial, sans-serif;background:var(--bg);color:#111}
+    .wrapper{display:flex;gap:18px;padding:18px;box-sizing:border-box;align-items:flex-start}
+    .left{width:440px;background:var(--panel);border-radius:10px;padding:16px;box-shadow:0 6px 18px rgba(13,27,50,.06);border:1px solid var(--border)}
+    .right{flex:1;min-width:700px;background:var(--panel);border-radius:10px;padding:12px;box-shadow:0 6px 18px rgba(13,27,50,.04);border:1px solid var(--border);display:flex;flex-direction:column}
+
+    h1{font-size:18px;margin:0 0 12px}
+    label{display:block;margin-top:10px;font-size:13px;color:var(--muted)}
+    input[type=number], input[type=text]{width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);margin-top:6px;box-sizing:border-box}
+    .row{display:flex;gap:8px}
+    .row > *{flex:1}
+    button{background:var(--accent);color:#fff;padding:10px 12px;border:0;border-radius:8px;cursor:pointer;margin-top:12px}
+    button.secondary{background:#e6eefc;color:var(--accent);border:1px solid rgba(11,108,255,.12)}
+
+    .process-list{margin-top:12px;border-radius:6px;padding:8px;background:#fcfdff;border:1px dashed var(--border);max-height:350px;overflow:auto}
+    .proc-row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+    .proc-row input{width:80px}
+
+    /* Right side: Gantt + table */
+    .gantt-wrap{padding:10px;border-radius:8px;border:1px solid var(--border);background:#fff}
+    .gantt{display:flex;align-items:center;height:80px;overflow:auto;padding:8px;gap:4px}
+    .segment{padding:6px 8px;border-radius:6px;min-width:48px;text-align:center;font-weight:600;box-shadow:0 1px 0 rgba(0,0,0,.04);border:1px solid rgba(0,0,0,.04)}
+    .seg-time{font-size:12px;color:var(--muted);margin-top:6px;text-align:center}
+
+    .legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .legend .item{font-size:12px;color:var(--muted)}
+
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:8px;border-bottom:1px solid #efefef;text-align:center;font-size:13px}
+    th{background:#fbfcff}
+    .averages{margin-top:10px;font-weight:600}
+
+    /* responsive / landscape hint */
+    @media (max-width:1000px){.wrapper{flex-direction:column}.left{width:100%}.right{min-width:unset}}
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="left">
+      <h1>Round-Robin Scheduler — Setup</h1>
+      <label>Number of processes</label>
+      <div class="row">
+        <input id="procCount" type="number" min="1" value="4">
+        <button id="genBtn">Create</button>
+      </div>
+
+      <label style="margin-top:12px">Time Quantum (ms)</label>
+      <input id="timeQuantum" type="number" min="1" value="4">
+
+      <div class="process-list" id="procList">
+        <!-- dynamic rows appear here -->
+      </div>
+
+      <div class="row">
+        <button id="runBtn">Run Scheduler</button>
+        <button id="resetBtn" class="secondary">Reset</button>
+        <a href="index.html">
+         <button style="background-color: #b6e5b6;">Go to SJF Page</button>
+        </a>
+      </div>
+
+      <p style="font-size:12px;color:var(--muted);margin-top:10px">Short names displayed (P1, P2, ...). Arrival Time = AT, Burst Time = BT, Start Time = ST, Completion Time = CT, Turnaround = TAT, Waiting = WT, Response = RT.</p>
+    </div>
+
+    <div class="right">
+      <h1>Gantt Chart & Timeline</h1>
+      <div class="gantt-wrap">
+        <div id="gantt" class="gantt" aria-live="polite"></div>
+        <div id="ganttTimes" class="seg-time"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <h1 style="margin-top:16px">Process Table</h1>
+      <div style="overflow:auto">
+        <table id="resultTable" aria-live="polite">
+          <thead>
+            <tr><th>Proc</th><th>AT</th><th>BT</th><th>ST</th><th>CT</th><th>TAT</th><th>WT</th><th>RT</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="averages" id="averages"></div>
+    </div>
+  </div>
+
+  <script>
+    // Utility: create a process row form
+    function createProcRow(idx, at=0, bt=1){
+      const row = document.createElement('div');
+      row.className = 'proc-row';
+      row.innerHTML = `
+        <div style="width:36px;font-weight:700">P${idx+1}</div>
+        <label style="width:60px;font-size:12px;color:var(--muted);margin:0">AT</label>
+        <input type="number" min="0" value="${at}" data-field="at">
+        <label style="width:60px;font-size:12px;color:var(--muted);margin:0">BT</label>
+        <input type="number" min="1" value="${bt}" data-field="bt">
+        <button style="margin-left:auto" data-action="remove">Remove</button>
+      `;
+      row.querySelector('[data-action=remove]').addEventListener('click', ()=>{ row.remove(); updateProcIndices(); });
+      return row;
+    }
+
+    function updateProcIndices(){
+      const rows = [...document.querySelectorAll('.proc-row')];
+      rows.forEach((r,i)=> r.querySelector('div').textContent = 'P'+(i+1));
+    }
+
+    // generate initial list
+    const procListEl = document.getElementById('procList');
+    document.getElementById('genBtn').addEventListener('click', ()=>{
+      const count = parseInt(document.getElementById('procCount').value) || 1;
+      procListEl.innerHTML='';
+      for(let i=0;i<count;i++) procListEl.appendChild(createProcRow(i,  i===0?0: Math.floor(Math.random()*5),  (i+1)*2 ));
+    });
+
+    // default generate
+    document.getElementById('genBtn').click();
+
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      document.getElementById('procCount').value = 4;
+      document.getElementById('timeQuantum').value = 4;
+      document.getElementById('genBtn').click();
+      clearResults();
+    });
+
+    function clearResults(){
+      document.getElementById('gantt').innerHTML='';
+      document.getElementById('ganttTimes').textContent='';
+      document.querySelector('#resultTable tbody').innerHTML='';
+      document.getElementById('averages').textContent='';
+      document.getElementById('legend').innerHTML='';
+    }
+
+    // Run scheduler when user clicks
+    document.getElementById('runBtn').addEventListener('click', ()=>{
+      const q = parseInt(document.getElementById('timeQuantum').value) || 1;
+      const rows = [...document.querySelectorAll('.proc-row')];
+      const procs = rows.map((r,i)=>({
+        pid: 'P'+(i+1),
+        at: Math.max(0, parseInt(r.querySelector('[data-field=at]').value)||0),
+        bt: Math.max(1, parseInt(r.querySelector('[data-field=bt]').value)||1),
+        rem: 0
+      }));
+      procs.forEach(p=>p.rem = p.bt);
+      if(procs.length===0) return;
+      const schedule = roundRobinSchedule(procs, q);
+      renderGantt(schedule.segments);
+      renderTable(schedule.procs);
+      renderLegend(schedule.procs);
+    });
+
+    // Core: Round-robin simulation
+    function roundRobinSchedule(inputProcs, quantum){
+      // clone and sort by arrival time
+      const procs = inputProcs.map(p=>Object.assign({},p));
+      procs.sort((a,b)=> a.at - b.at || a.pid.localeCompare(b.pid));
+
+      const n = procs.length;
+      const queue = [];
+      const time = {t: 0};
+      const segments = []; // {pid, start, end}
+
+      // initialize stats
+      procs.forEach(p=>{ p.rem = p.bt; p.st = null; p.ct = null; p.tat = null; p.wt = null; p.rt = null; });
+
+      // pointer to arrivals
+      let i = 0;
+      // if first arrival > 0, jump to it
+      if(procs[0].at > 0) time.t = procs[0].at;
+
+      // push arrivals at current time
+      while(i < n && procs[i].at <= time.t) { queue.push(procs[i]); i++; }
+
+      while(queue.length > 0 || i < n){
+        if(queue.length===0){
+          // CPU idle: advance to next arrival
+          time.t = procs[i].at;
+          while(i<n && procs[i].at <= time.t) { queue.push(procs[i]); i++; }
+          continue;
+        }
+
+        const cur = queue.shift();
+        // record first response/start
+        if(cur.st === null) cur.st = time.t;
+        const runTime = Math.min(quantum, cur.rem);
+        const segStart = time.t;
+        time.t += runTime;
+        const segEnd = time.t;
+        cur.rem -= runTime;
+        segments.push({pid: cur.pid, start: segStart, end: segEnd});
+
+        // push new arrivals that came during this quantum (<= current time)
+        while(i<n && procs[i].at <= time.t){ queue.push(procs[i]); i++; }
+
+        if(cur.rem > 0){
+          // put back to queue tail
+          queue.push(cur);
+        } else {
+          // finished
+          cur.ct = time.t;
+        }
+      }
+
+      // compute TAT WT RT
+      procs.forEach(p=>{
+        p.tat = p.ct - p.at;
+        p.wt = p.tat - p.bt;
+        p.rt = p.st - p.at;
+      });
+
+      // order procs back to input order by pid number
+      procs.sort((a,b)=> parseInt(a.pid.slice(1)) - parseInt(b.pid.slice(1)) );
+
+      return {procs, segments};
+    }
+
+    // Render functions
+    function renderGantt(segments){
+      const gantt = document.getElementById('gantt');
+      gantt.innerHTML = '';
+      if(segments.length===0) return;
+      const minT = Math.min(...segments.map(s=>s.start));
+      const maxT = Math.max(...segments.map(s=>s.end));
+      const total = maxT - minT || 1;
+
+      // color palette (cycle)
+      const colors = ["#c7e0ff","#ffd6c7","#e6ffd9","#fff3b8","#f0d9ff","#d9f0ff","#ffd9ec"];
+      const pidToColor = {};
+      let colorIdx = 0;
+
+      for(const seg of segments){
+        if(!pidToColor[seg.pid]) pidToColor[seg.pid] = colors[colorIdx++ % colors.length];
+        const el = document.createElement('div');
+        el.className = 'segment';
+        const widthPx = Math.max(40, ( (seg.end - seg.start) / total) * 900 ); // scale
+        el.style.minWidth = widthPx + 'px';
+        el.style.background = pidToColor[seg.pid];
+        el.style.border = '1px solid rgba(0,0,0,.06)';
+        el.textContent = seg.pid;
+        gantt.appendChild(el);
+      }
+
+      // times below
+      const timesEl = document.getElementById('ganttTimes');
+      const times = segments.map(s=>s.start);
+      times.push(segments[segments.length-1].end);
+      timesEl.textContent = times.join(' ⟶ ');
+
+      // store legend mapping
+      const legendData = Object.entries(pidToColor).map(([pid, color])=>({pid,color}));
+      legendData.sort((a,b)=> parseInt(a.pid.slice(1)) - parseInt(b.pid.slice(1)));
+      const legendEl = document.getElementById('legend');
+      legendEl.innerHTML = '';
+      legendData.forEach(l=>{
+        const item = document.createElement('div'); item.className = 'item';
+        item.innerHTML = `<span style="display:inline-block;width:14px;height:14px;background:${l.color};border-radius:3px;margin-right:6px;vertical-align:middle;border:1px solid rgba(0,0,0,.06)"></span>${l.pid}`;
+        legendEl.appendChild(item);
+      });
+    }
+
+    function renderTable(procs){
+      const tbody = document.querySelector('#resultTable tbody');
+      tbody.innerHTML = '';
+      let sumTAT=0,sumWT=0,sumRT=0;
+      procs.forEach(p=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${p.pid}</td><td>${p.at}</td><td>${p.bt}</td><td>${p.st}</td><td>${p.ct}</td><td>${p.tat}</td><td>${p.wt}</td><td>${p.rt}</td>`;
+        tbody.appendChild(tr);
+        sumTAT += p.tat; sumWT += p.wt; sumRT += p.rt;
+      });
+      const n = procs.length;
+      const avgs = document.getElementById('averages');
+      avgs.textContent = `Average TAT = ${(sumTAT/n).toFixed(2)}    Average WT = ${(sumWT/n).toFixed(2)}    Average RT = ${(sumRT/n).toFixed(2)}`;
+    }
+
+    function renderLegend(procs){ /* already handled in renderGantt */ }
+
+    // helpful: allow adding single process row
+    const addBtn = document.createElement('button'); addBtn.textContent='Add Process'; addBtn.style.marginTop='8px'; addBtn.className='secondary';
+    addBtn.addEventListener('click', ()=>{ const idx = document.querySelectorAll('.proc-row').length; procListEl.appendChild(createProcRow(idx,0,1)); updateProcIndices(); });
+    procListEl.parentNode.insertBefore(addBtn, procListEl.nextSibling);
+
+    // keyboard: Enter on quantum runs
+    document.getElementById('timeQuantum').addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getElementById('runBtn').click(); });
+
+    // accessibility: focus styles
+  </script>
+</body>
+</html>
+    
