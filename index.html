@@ -4,86 +4,123 @@
   <meta charset="utf-8" />
   <title>SJF Non-Preemptive (using WASM)</title>
   <style>
-  body {
-    font-family: Arial, sans-serif;
-    padding: 20px;
-    background-color: #f5f5f5;
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f5f5f5;
 
-    display: flex;
-    flex-direction: column; /* stack elements vertically */
-    align-items: center;    /* center horizontally */
-    justify-content: center; /* vertical centering */
-    min-height: 100vh;       /* make body full viewport height */
-  }
+      display: flex;
+      flex-direction: column; /* stack elements vertically */
+      align-items: center;    /* center horizontally */
+      justify-content: flex-start; /* avoid vertical overlap */
+      min-height: 100vh;       /* full viewport height */
+      box-sizing: border-box;
+    }
 
-  h2 {
-    color: #333;
-    margin-bottom: 16px;
-  }
+    h2 {
+      color: #333;
+      margin-bottom: 16px;
+      text-align: center;
+      max-width: 100%;
+    }
 
-  #process-container div {
-    background: #fff;
-    padding: 10px 12px;
-    margin-bottom: 10px;
-    border-radius: 6px;
-    box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
-  }
+    #process-container {
+      width: 100%;
+      max-width: 700px;  /* responsive max width */
+      box-sizing: border-box;
+    }
 
-  input[type="number"] {
-    width: 80px;
-    padding: 6px 8px;  /* slightly bigger for comfort */
-    margin: 0 6px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    box-shadow: inset 1px 1px 3px rgba(0,0,0,0.05);
-  }
+    #process-container div {
+      background: #fff;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      box-shadow: 2px 2px 6px rgba(0,0,0,0.1);
+      display: flex;
+      flex-wrap: wrap;  /* wrap inputs/buttons if narrow */
+      align-items: center;
+      gap: 6px;
+    }
 
-  /* All buttons */
-  button {
-    padding: 10px 16px;  /* normal button size */
-    margin: 4px 6px;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-    box-shadow: 2px 2px 4px rgba(0,0,0,0.15);
-    transition: all 0.2s ease;
-    font-size: 1rem;     /* bigger text */
-  }
+    input[type="number"] {
+      width: 80px;
+      padding: 6px 8px;  
+      margin: 0 6px 6px 0;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+      box-shadow: inset 1px 1px 3px rgba(0,0,0,0.05);
+    }
 
-  /* Main buttons side by side */
-  #addBtn, #runBtn, #clearBtn {
-    background-color: #007BFF; /* Blue */
-    color: white;
-    display: inline-block;     /* make them horizontal */
-  }
+    button {
+      padding: 10px 16px;
+      margin: 4px 6px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      box-shadow: 2px 2px 4px rgba(0,0,0,0.15);
+      transition: all 0.2s ease;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
 
-  #addBtn:hover, #runBtn:hover, #clearBtn:hover {
-    background-color: #0056b3;
-    box-shadow: 2px 4px 6px rgba(0,0,0,0.25);
-  }
+    #addBtn, #runBtn, #clearBtn {
+      background-color: #007BFF;
+      color: white;
+      display: inline-block;
+      max-width: 90%; /* scale on narrow screens */
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
 
-  /* Remove button in process rows */
-  #process-container button {
-    background-color: #dc3545; /* Red */
-    color: white;
-    font-size: 0.9em;
-  }
+    #addBtn:hover, #runBtn:hover, #clearBtn:hover {
+      background-color: #0056b3;
+      box-shadow: 2px 4px 6px rgba(0,0,0,0.25);
+    }
 
-  #process-container button:hover {
-    background-color: #a71d2a;
-    box-shadow: 1px 2px 4px rgba(0,0,0,0.25);
-  }
+    #process-container button {
+      background-color: #dc3545;
+      color: white;
+      font-size: 0.9em;
+    }
 
-  #output {
-    border: 1px solid #ccc;
-    padding: 8px;
-    margin-top: 12px;
-    white-space: pre-wrap;
-    background: #fff;
-    border-radius: 5px;
-    box-shadow: inset 1px 1px 3px rgba(0,0,0,0.05);
-  }
-</style>
+    #process-container button:hover {
+      background-color: #a71d2a;
+      box-shadow: 1px 2px 4px rgba(0,0,0,0.25);
+    }
+
+    #output {
+      border: 1px solid #ccc;
+      padding: 8px;
+      margin-top: 12px;
+      white-space: pre-wrap;  /* wrap text */
+      background: #fff;
+      border-radius: 5px;
+      box-shadow: inset 1px 1px 3px rgba(0,0,0,0.05);
+      width: 100%;
+      max-width: 700px;   /* responsive */
+      overflow-x: auto;   /* scroll if too wide */
+      box-sizing: border-box;
+    }
+
+    @media screen and (max-width: 500px) {
+      input[type="number"] {
+        width: 60px;
+        margin-bottom: 4px;
+      }
+      button {
+        padding: 8px 12px;
+        font-size: 0.9rem;
+        margin: 3px 4px;
+      }
+      #process-container div {
+        flex-direction: column; /* stack on narrow screens */
+        align-items: flex-start;
+      }
+    }
+  </style>
+
 
 </head>
 <body>
