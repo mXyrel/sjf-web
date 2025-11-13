@@ -1235,6 +1235,18 @@ async function createWasm() {
       return 0;
     };
 
+  
+  
+  var stringToNewUTF8 = (str) => {
+      var size = lengthBytesUTF8(str) + 1;
+      var ret = _malloc(size);
+      if (ret) stringToUTF8(str, ret, size);
+      return ret;
+    };
+  
+  var allocateUTF8 = (...args) => stringToNewUTF8(...args);
+
+
   var getCFunc = (ident) => {
       var func = Module['_' + ident]; // closure exported function
       assert(func, 'Cannot call unknown function ' + ident + ', make sure it is exported');
@@ -1315,18 +1327,6 @@ async function createWasm() {
       ret = onDone(ret);
       return ret;
     };
-
-  
-  
-  var stringToNewUTF8 = (str) => {
-      var size = lengthBytesUTF8(str) + 1;
-      var ret = _malloc(size);
-      if (ret) stringToUTF8(str, ret, size);
-      return ret;
-    };
-  
-  var allocateUTF8 = (...args) => stringToNewUTF8(...args);
-
 // End JS library code
 
 // include: postlibrary.js
