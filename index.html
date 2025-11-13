@@ -1,0 +1,157 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SJF Non-Preemptive (WASM demo)</title>
+</head>
+<body>
+
+<h2>SJF Non-Preemptive Scheduling — WASM demo</h2>
+
+<div id="process-container"></div>
+
+<button id="addBtn">Add Process</button>
+<button id="runBtn">Run SJF</button>
+<button id="clearBtn">Clear All</button>
+
+<pre id="output" style="border:1px solid #ccc; padding:8px; margin-top:12px; white-space:pre-wrap;"></pre>
+
+<script src="sjf.js"></script>
+<script>
+  // Basic dynamic UI for adding process inputs
+  let processCount = 0;
+  const container = document.getElementById('process-container');
+  const outputEl = document.getElementById('output');
+  const addBtn = document.getElementById('addBtn');
+  const runBtn = document.getElementById('runBtn');
+  const clearBtn = document.getElementById('clearBtn');
+
+  function addProcess(at = '', bt = '') {
+    processCount++;
+    const id = processCount;
+    const wrapper = document.createElement('div');
+    wrapper.id = `proc${id}`;
+    wrapper.innerHTML = `
+      <strong>P${id}</strong>
+      Arrival Time: <input type="number" id="at${id}" min="0" value="${at}" />
+      Burst Time: <input type="number" id="bt${id}" min="0" value="${bt}" />
+      <button onclick="removeProcess(${id})">Remove</button>
+      <br><br>
+    `;
+    container.appendChild(wrapper);
+  }
+
+  function removeProcess(id) {
+    const node = document.getElementById('proc' + id);
+    if (!node) return;
+    node.remove();
+    // Note: we keep processCount as-is to preserve P ids. This keeps P labels stable.
+  }
+
+  addBtn.addEventListener('click', () => addProcess());
+  clearBtn.addEventListener('click', () => {
+    container.innerHTML = '';
+    processCount = 0;
+    outputEl.textContent = '';
+  });
+
+  // add one row by default
+  addProcess();
+
+  // Helper to get the compiled module (works with Emscripten's default loader)
+  async function getModule() {
+    if (window._sjfModule) return window._sjfModule;
+    // If the generated file defines a factory createModule(), use it; else wait for Module.
+    if (typeof createModule === 'function') {
+      window._sjfModule = await createModule();
+    } else if (typeof Module !== 'undefined' && Module instanceof Promise) {
+      window._sjfModule = await Module;
+    } else if (typeof Module !== 'undefined') {
+      window._sjfModule = Module;
+    } else {
+      // If uncertain, wait a short bit for the generated loader to attach Module
+      window._sjfModule = await new Promise((resolve) => {
+        let tries = 0;
+        const t = setInterval(() => {
+          if (typeof createModule === 'function') {
+            clearInterval(t);
+            createModule().then(m => resolve(m));
+          } else if (typeof Module !== 'undefined') {
+            clearInterval(t);
+            resolve(Module);
+          } else if (++tries > 50) {
+            clearInterval(t);
+            throw new Error('Emscripten module not found (sjf.js).');
+          }
+        }, 50);
+      });
+    }
+    return window._sjfModule;
+  }
+
+  async function runCppSJF(inputText) {
+    const module = await getModule();
+    // allocateUTF8 is provided by Emscripten helper APIs
+    const inputPtr = module.allocateUTF8(inputText);
+    
+    const result = module.ccall(
+    'runSJF',       // C++ function name
+     'string',       // return type
+    ['number'],     // argument types
+    [inputPtr]      // arguments
+    );
+
+    // free the input buffer
+    //if (module._free) module._free(inputPtr);
+    return result;
+  }
+
+  runBtn.addEventListener('click', async () => {
+    // Build input string expected by sjf.cpp:
+    // First line: n
+    // Then n lines: AT BT
+    // We collect only present rows (skip removed)
+    const rows = container.querySelectorAll('div[id^="proc"]');
+    const data = [];
+    for (const row of rows) {
+      // extract numeric inputs inside this row
+      const inputs = row.querySelectorAll('input[type="number"]');
+      if (inputs.length >= 2) {
+        const at = inputs[0].value;
+        const bt = inputs[1].value;
+        if (at === '' || bt === '') {
+          outputEl.textContent = 'Please fill all Arrival Time and Burst Time fields (non-empty).';
+          return;
+        }
+        if (Number(at) < 0 || Number(bt) < 0) {
+          outputEl.textContent = 'Arrival Time and Burst Time must be non-negative.';
+          return;
+        }
+        data.push({ at: Number(at), bt: Number(bt) });
+      }
+    }
+
+    if (data.length === 0) {
+      outputEl.textContent = 'Add at least one process.';
+      return;
+    }
+
+    // Build the exact textual format for the C++ parser
+    let inputText = data.length + '\n';
+    for (const d of data) {
+      inputText += `${d.at} ${d.bt}\n`;
+    }
+
+    outputEl.textContent = 'Running... (this may take a moment)\n';
+    try {
+      const result = await runCppSJF(inputText);
+      outputEl.textContent = result;
+    } catch (err) {
+      outputEl.textContent = 'Error running WASM: ' + err;
+      console.error(err);
+    }
+  });
+</script>
+
+</body>
+</html>
